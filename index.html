@@ -204,7 +204,7 @@ pre{background:#0f1222;color:#e6e9f5;padding:14px;border-radius:12px;overflow:au
    הגדרת ענן (Google Sheets) — אפשר להדביק כאן קבוע את כתובת ה-Web App
    (לא חובה; אחרת יופיע מסך הגדרה)
    ============================================================ */
-const BAKED = { webapp: "", key: "" };
+const BAKED = { webapp: "https://script.google.com/macros/s/AKfycbyCuwAqzHQPjuo2qMw49u5qAoABS29oPkgopvGy3awB8ktOvh0u5A0vfKKU0IAoYK3E/exec", key: "" };
 const LS_CFG = "ort_onb_cfg";
 const LS_STATE = "ort_onb_state";
 const LS_WHO = "ort_onb_who";
@@ -216,11 +216,19 @@ const ENC = { iv: "1d/jsMVwcgkM2sqt", ct: "wv2K9/3UV2Kovakr+Ol3zUsHGiWqJ5ALYhALp
 function decodeCfg(s){ try{ return JSON.parse(decodeURIComponent(escape(atob(s)))); }catch(e){ return null; } }
 function encodeCfg(o){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
 function loadConfig(){
-  if(BAKED.webapp && BAKED.key) return {webapp:BAKED.webapp,key:BAKED.key,source:"baked"};
-  const h = location.hash.match(/cfg=([^&]+)/);
-  if(h){ const c=decodeCfg(h[1]); if(c&&c.webapp&&c.key){ localStorage.setItem(LS_CFG,JSON.stringify(c)); return {...c,source:"hash"}; } }
+  let webapp = BAKED.webapp || "";
+  let key = BAKED.key || "";
+  // short link form: #k=<key>
+  const hk = location.hash.match(/[#&]k=([^&]+)/);
+  if(hk){ try{ key = decodeURIComponent(hk[1]); }catch(e){ key = hk[1]; } }
+  // legacy long form: #cfg=<base64{webapp,key}>
+  const hc = location.hash.match(/cfg=([^&]+)/);
+  if(hc){ const c=decodeCfg(hc[1]); if(c){ if(c.webapp) webapp=c.webapp; if(c.key) key=c.key; } }
+  if(webapp && key){ localStorage.setItem(LS_CFG, JSON.stringify({webapp,key})); return {webapp,key,source:"link"}; }
+  // restore from a previous visit on this device
   const ls = localStorage.getItem(LS_CFG);
-  if(ls){ try{ const c=JSON.parse(ls); if(c.webapp&&c.key) return {...c,source:"ls"}; }catch(e){} }
+  if(ls){ try{ const c=JSON.parse(ls); if(!webapp&&c.webapp)webapp=c.webapp; if(!key&&c.key)key=c.key; }catch(e){} }
+  if(webapp && key) return {webapp,key,source:"ls"};
   return null;
 }
 /* decrypt the embedded task definitions using the key from the team link */
@@ -234,7 +242,7 @@ async function decryptTasks(keyB64){
 }
 function shareLink(){
   const base=location.origin+location.pathname;
-  return base+"#cfg="+encodeCfg({webapp:CFG.webapp,key:CFG.key});
+  return base+"#k="+encodeURIComponent(CFG.key);
 }
 let CFG = loadConfig();
 
