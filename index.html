@@ -36,6 +36,10 @@ a{color:var(--accent)}
 .sync.ok .dot{background:var(--green)}
 .sync.err .dot{background:var(--red)}
 .sync.local .dot{background:var(--yellow)}
+.who.need{border-color:var(--red);box-shadow:0 0 0 3px var(--red-soft);animation:whoshake .3s}
+@keyframes whoshake{25%{transform:translateX(3px)}75%{transform:translateX(-3px)}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e2433;color:#fff;padding:10px 18px;border-radius:12px;font-size:13.5px;font-weight:600;z-index:200;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s;white-space:nowrap}
+.toast.show{opacity:1}
 
 /* ===== progress hero ===== */
 .hero{max-width:1180px;margin:18px auto 6px;padding:0 20px}
@@ -482,13 +486,33 @@ function taskEl(t){
   if(mb){ mb.onclick=()=>{ const d=el.querySelector(".details"); d.classList.toggle("hidden"); mb.textContent=d.classList.contains("hidden")?"פרטים ▾":"הסתר ▴"; }; }
   // notes
   const ta=el.querySelector("textarea");
+  ta.addEventListener("focus",()=>{ if(!requireWho()) ta.blur(); });
   ta.addEventListener("input",()=>{ onNoteInput(t,ta.value); });
   return el;
 }
 function sbtn(id,st,cls,cur){ return `<button class="sbtn ${cls} ${cur===st?"on":""}" data-st="${st}">${st===cur?"● ":""}${STLABEL[st]}</button>`; }
 
+/* updates require a name — otherwise the stamp is anonymous and untraceable */
+let toastTimer=null;
+function toast(msg){
+  let el=document.getElementById("toast");
+  if(!el){ el=document.createElement("div"); el.id="toast"; el.className="toast"; document.body.appendChild(el); }
+  el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove("show"),2600);
+}
+function requireWho(){
+  const who=document.getElementById("who");
+  if((who.value||"").trim()) return true;
+  const box=who.closest(".who");
+  box.classList.remove("need"); void box.offsetWidth; box.classList.add("need");
+  setTimeout(()=>box.classList.remove("need"),2600);
+  who.focus();
+  toast("כדי לעדכן משימות — כתבו קודם את השם שלכם למעלה 👆");
+  return false;
+}
 function stampNow(t){ const r=rec(t.id); r.updated_by=(document.getElementById("who").value||"").trim(); r.updated_at=new Date().toISOString(); }
 function setStatus(t,st){
+  if(!requireWho()) return;
   const r=rec(t.id); r.status=st;
   if(typeof r.notes!=="string"||r.notes==="") r.notes=effNotes(t);
   stampNow(t); saveLocal(); queuePush(t.id); render();
