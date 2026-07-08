@@ -410,10 +410,25 @@ function mergeCloud(rows){
 }
 
 /* ---------- sync indicator ---------- */
+/* forgiving: a single failed poll shouldn't scream "error" — Apps Script blips
+   and self-heals on the next cycle. Only show a real error after a few in a row. */
+let syncFails=0, lastOkAt="";
 function setSync(kind){
   const el=document.getElementById("sync"); const t=document.getElementById("syncTxt");
-  el.className="sync "+(kind==="ok"?"ok":kind==="err"?"err":kind==="local"?"local":"");
-  t.textContent = kind==="ok"?("מסונכרן · "+timeNow()) : kind==="err"?"שגיאת סנכרון — מנסה שוב" : kind==="local"?"מצב מקומי (ללא ענן)" : "מתחבר…";
+  if(kind==="ok"){ syncFails=0; lastOkAt=timeNow(); el.className="sync ok"; t.textContent="מסונכרן · "+lastOkAt; return; }
+  if(kind==="local"){ el.className="sync local"; t.textContent="מצב מקומי (ללא ענן)"; return; }
+  if(kind==="err"){
+    syncFails++;
+    if(syncFails<3){ // soft: stay calm, keep showing last good sync
+      el.className="sync"+(lastOkAt?" ok":"");
+      t.textContent = lastOkAt ? ("מסונכרן · "+lastOkAt+" · מתעדכן…") : "מתחבר…";
+    } else {
+      el.className="sync err";
+      t.textContent="שגיאת סנכרון — מנסה שוב";
+    }
+    return;
+  }
+  el.className="sync"; t.textContent="מתחבר…"; // connecting
 }
 function timeNow(){ const d=new Date(); return d.toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"}); }
 function fmtStamp(r){
