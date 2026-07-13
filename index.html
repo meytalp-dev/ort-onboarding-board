@@ -216,9 +216,15 @@ body.editing .task{outline:1px dashed var(--line);outline-offset:2px}
 .role-chip{background:#f0f1f6;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer;user-select:none}
 .role-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .role-edit-row{display:flex;align-items:center;gap:10px;margin:8px 0}
-.role-edit-row .re-orig{flex:none;min-width:90px;font-size:12.5px;color:var(--muted);font-weight:600;text-align:left;direction:rtl}
+.role-edit-row .re-orig{flex:none;min-width:110px;font-size:12.5px;color:var(--muted);font-weight:600;text-align:left;direction:rtl}
 .role-edit-row .re-arrow{flex:none;color:var(--muted)}
 .role-edit-row .re-in{flex:1}
+.role-edit-row .re-del{flex:none;padding:6px 9px}
+.re-tag{display:inline-block;background:var(--green-soft);color:var(--green);border:1px solid var(--green-line);border-radius:6px;font-size:10.5px;font-weight:700;padding:0 5px;margin-inline-start:4px;vertical-align:middle}
+.role-add-bar{display:flex;gap:8px;align-items:center;margin-top:4px}
+.role-add-bar .field{flex:1}
+.role-add-bar .ebtn{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700;padding:9px 14px}
+#roleRows{max-height:44vh;overflow:auto;margin-top:4px;padding-inline-end:2px}
 </style>
 </head>
 <body>
@@ -350,6 +356,8 @@ function mergeDef(base,o){
 /* ---------- responsibility-area (role) renaming, synced via one __rolemap__ row ---------- */
 function roleMap(){ const r=STATE["__rolemap__"]; if(!r||!r.notes) return {}; try{ const o=JSON.parse(r.notes); return (o&&typeof o==="object")?o:{}; }catch(e){ return {}; } }
 function baseRoles(){ const s=[]; BASE_TASKS.forEach(t=>(t.roles||[]).forEach(r=>{ if(s.indexOf(r)<0) s.push(r); })); return s; }
+/* extra responsibility-areas added by the team (with no task yet), synced via one __roles__ row */
+function extraRoles(){ const r=STATE["__roles__"]; if(!r||!r.notes) return []; try{ const a=JSON.parse(r.notes); return Array.isArray(a)?a.filter(x=>typeof x==="string"):[]; }catch(e){ return []; } }
 function mapText(s){ if(!s) return s; let out=s; for(const k in ROLEMAP){ if(ROLEMAP[k]&&ROLEMAP[k]!==k) out=out.split(k).join(ROLEMAP[k]); } return out; }
 
 /* fold the encrypted base tasks together with the cloud-stored edits into TASKS */
@@ -414,7 +422,7 @@ function mergeCloud(rows){
       if(id===editing) return; // don't clobber a note being typed
       STATE[id]={status:row.status,notes:row.notes||"",updated_by:row.updated_by||"",updated_at:row.updated_at};
       changed=true;
-      if(typeof id==="string" && (id.slice(0,7)==="__def__" || id==="__rolemap__")) defChanged=true;
+      if(typeof id==="string" && (id.slice(0,7)==="__def__" || id==="__rolemap__" || id==="__roles__")) defChanged=true;
     }
   });
   if(changed){ saveLocal(); if(defChanged){ rebuildTasks(); buildFilters(); buildTabs(); } render(); }
@@ -499,7 +507,7 @@ function render(){
     hint.innerHTML="✏️ <b>מצב עריכת תוכן פעיל.</b> אפשר לשנות שמות אחראים, טקסט משימות, לוחות זמנים, שיוך לתפקידים — וגם להוסיף ולמחוק משימות. כל שינוי נשמר ומסתנכרן לכל הצוות תוך ~15 שניות.";
     wrap.appendChild(hint);
     const ab=document.createElement("div"); ab.className="add-task-bar";
-    ab.innerHTML=`<button class="ebtn" id="addTaskBtn">➕ הוספת משימה</button><button class="ebtn" id="editRolesBtn">🧭 שמות תחומי האחריות</button>`;
+    ab.innerHTML=`<button class="ebtn" id="addTaskBtn">➕ הוספת משימה</button><button class="ebtn" id="editRolesBtn">🧭 תחומי אחריות — הוספה ועריכה</button>`;
     ab.querySelector("#addTaskBtn").onclick=addTask;
     ab.querySelector("#editRolesBtn").onclick=openRolesEditor;
     wrap.appendChild(ab);
@@ -690,6 +698,8 @@ function taskRoles(t){
 function rolesOrder(){
   const cnt={};
   TASKS.forEach(t=>taskRoles(t).forEach(r=>cnt[r]=(cnt[r]||0)+1));
+  // manually-added areas appear even before a task is assigned to them
+  extraRoles().forEach(r=>{ const v=ROLEMAP[r]||r; if(cnt[v]==null) cnt[v]=0; });
   return Object.keys(cnt).sort((a,b)=>(cnt[b]-cnt[a])||a.localeCompare(b,"he"));
 }
 function roleTasksOf(role){ return TASKS.filter(t=>taskRoles(t).includes(role)); }
@@ -869,45 +879,89 @@ function openEditor(t,isNew){
   setTimeout(()=>{ const a=host.querySelector("#edAction"); if(a&&isNew) a.focus(); },40);
 }
 
-/* rename responsibility-areas (roles) globally — one synced __rolemap__ row */
-function commitRoleMap(map){
+/* rename responsibility-areas (roles) globally — one synced __rolemap__ row.
+   optionally also update the manually-added areas list (__roles__) in the same save. */
+function commitRoleMap(map,extra){
   const r=rec("__rolemap__"); r.status=null;
   r.notes=JSON.stringify(map);
   r.updated_by=(document.getElementById("who").value||"").trim();
   r.updated_at=new Date().toISOString();
   saveLocal(); queuePush("__rolemap__");
+  if(extra){
+    const r2=rec("__roles__"); r2.status=null;
+    r2.notes=JSON.stringify(extra);
+    r2.updated_by=r.updated_by; r2.updated_at=r.updated_at;
+    saveLocal(); queuePush("__roles__");
+  }
   if(TAB!=="__all__"&&TAB!=="__manager__"&&map[TAB]) TAB=map[TAB];
   rebuildTasks(); buildFilters(); buildTabs(); render();
 }
+/* full responsibility-areas manager: add new areas, rename any area, remove added ones */
 function openRolesEditor(){
   if(!requireWho()) return;
   const host=document.getElementById("setupHost");
   const map=roleMap();
-  const base=baseRoles();
-  host.innerHTML=`<div class="overlay"><div class="modal"><div class="modal-in">
-    <h2>🧭 שמות תחומי האחריות</h2>
-    <p>שינוי שם כאן מחליף אותו בכל הלוח — בטאבים, במבט מנהלת, בסינון ובשורת "באחריות". נשמר לכל הצוות.</p>
-    <div id="roleRows">${base.map(r=>`
-      <div class="role-edit-row">
-        <span class="re-orig" title="השם המקורי">${esc(r)}</span>
+  const base=baseRoles();                 // areas that come from the tasks — can be renamed, not removed
+  const added=extraRoles().filter(r=>base.indexOf(r)<0); // areas added manually — can also be removed
+  const rowHtml=(r,isAdded)=>`
+      <div class="role-edit-row" data-canon="${esc(r)}" data-added="${isAdded?1:0}">
+        <span class="re-orig" title="${isAdded?"תחום שהוסף":"מגיע מהמשימות"}">${esc(r)}${isAdded?' <span class="re-tag">חדש</span>':""}</span>
         <span class="re-arrow">←</span>
         <input class="field re-in" data-base="${esc(r)}" value="${esc(map[r]||r)}">
-      </div>`).join("")}</div>
+        ${isAdded?'<button class="ebtn del re-del" title="הסרת התחום">🗑</button>':""}
+      </div>`;
+  host.innerHTML=`<div class="overlay"><div class="modal"><div class="modal-in">
+    <h2>🧭 תחומי אחריות — הוספה ועריכה</h2>
+    <p>אפשר להוסיף תחום אחריות חדש (למשל "תקשורת ויח״צ"), לשנות שם של כל תחום, או להסיר תחום שהוסף. השינוי חל על כל הלוח — טאבים, מבט מנהלת, סינון ושורת "באחריות" — ונשמר לכל הצוות.</p>
+    <label style="margin-top:6px">הוספת תחום אחריות חדש</label>
+    <div class="role-add-bar">
+      <input class="field" id="rmNew" placeholder="שם התחום החדש — לדוגמה: תקשורת ויח״צ">
+      <button class="ebtn" id="rmAdd" style="flex:none">➕ הוספה</button>
+    </div>
+    <label style="margin-top:14px">התחומים הקיימים</label>
+    <div id="roleRows">
+      ${base.map(r=>rowHtml(r,false)).join("")}
+      ${added.map(r=>rowHtml(r,true)).join("")}
+    </div>
     <div class="row-btns">
       <button class="btn" id="rmSave">💾 שמירה</button>
       <button class="ebtn" id="rmCancel">ביטול</button>
-      <button class="ebtn" id="rmReset" style="margin-inline-start:auto">↺ איפוס לשמות המקוריים</button>
+      <button class="ebtn" id="rmReset" style="margin-inline-start:auto">↺ איפוס שמות</button>
     </div>
   </div></div></div>`;
   const close=()=>{ host.innerHTML=""; };
+  const rows=host.querySelector("#roleRows");
+  const wireDel=btn=>{ btn.onclick=()=>btn.closest(".role-edit-row").remove(); };
+  host.querySelectorAll(".re-del").forEach(wireDel);
+  const addRole=()=>{
+    const inp=host.querySelector("#rmNew"); const v=inp.value.trim();
+    if(!v){ inp.focus(); return; }
+    const exists=[...rows.querySelectorAll(".role-edit-row")].some(row=>{
+      const c=row.dataset.canon; const cur=(row.querySelector(".re-in").value||"").trim();
+      return c===v || cur===v;
+    });
+    if(exists){ toast("כבר קיים תחום בשם הזה"); inp.select(); return; }
+    rows.insertAdjacentHTML("beforeend",rowHtml(v,true));
+    wireDel(rows.lastElementChild.querySelector(".re-del"));
+    inp.value=""; inp.focus();
+    rows.lastElementChild.scrollIntoView({block:"nearest"});
+  };
+  host.querySelector("#rmAdd").onclick=addRole;
+  host.querySelector("#rmNew").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); addRole(); } });
   host.querySelector("#rmCancel").onclick=close;
   host.querySelector(".overlay").addEventListener("mousedown",e=>{ if(e.target.classList.contains("overlay")) close(); });
   host.querySelector("#rmReset").onclick=()=>{ host.querySelectorAll(".re-in").forEach(inp=>inp.value=inp.dataset.base); };
   host.querySelector("#rmSave").onclick=()=>{
-    const nm={};
-    host.querySelectorAll(".re-in").forEach(inp=>{ const b=inp.dataset.base; const v=inp.value.trim(); if(v&&v!==b) nm[b]=v; });
-    close(); commitRoleMap(nm); toast("שמות תחומי האחריות עודכנו");
+    const nm={}, extra=[];
+    host.querySelectorAll(".role-edit-row").forEach(row=>{
+      const canon=row.dataset.canon;
+      const v=(row.querySelector(".re-in").value||"").trim();
+      if(v&&v!==canon) nm[canon]=v;
+      if(row.dataset.added==="1") extra.push(canon);
+    });
+    close(); commitRoleMap(nm,extra); toast("תחומי האחריות עודכנו");
   };
+  setTimeout(()=>{ const n=host.querySelector("#rmNew"); if(n) n.focus(); },40);
 }
 
 /* ---------- role hero (top of a role tab) ---------- */
