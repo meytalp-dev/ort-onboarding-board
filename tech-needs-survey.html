@@ -153,14 +153,9 @@
       <p class="hint">אפשר לפרט כמה נושאים — כל מידע יעזור לנו לבנות מענה מדויק.</p>
     </div>
 
-    <button type="submit">📩 שליחת הסקר</button>
+    <button type="submit" id="submitBtn">📩 שליחת הסקר</button>
 
-    <div class="after" id="afterBox">
-      <b>תודה רבה!</b> נפתחה עבורכם הודעת מייל עם התשובות — יש ללחוץ בה על "שלח".<br>
-      אם המייל לא נפתח, לחצו על הכפתור למטה, הדביקו את התשובות במייל ושלחו לכתובת:
-      <b dir="ltr">meytalp@bethaarava.ort.org.il</b>
-      <button type="button" class="copybtn" id="copyBtn">📋 העתקת התשובות</button>
-    </div>
+    <div class="after" id="afterBox"></div>
   </form>
 
   <footer>משרד העבודה · מינהל הכשרה מקצועית — סקר צרכים טכנולוגיים תשפ"ז</footer>
@@ -168,10 +163,26 @@
 
 <script>
 (function(){
-  var TO_EMAIL = 'meytalp@bethaarava.ort.org.il'; // כתובת היעד — ניתן לשינוי
+  // כתובת ה-Web App של Google Apps Script (איסוף לגוגל שיטס).
+  // כשהיא ריקה — הסקר נופל חזרה לשליחה במייל.
+  var SCRIPT_URL = '';
+  var TO_EMAIL = 'meytalp@bethaarava.ort.org.il';
+
   var form = document.getElementById('surveyForm');
   var afterBox = document.getElementById('afterBox');
+  var submitBtn = document.getElementById('submitBtn');
   var lastSummary = '';
+
+  function payload(){
+    return {
+      school: form.school.value.trim(),
+      principal: form.principal.value.trim(),
+      coordName: form.coordName.value.trim(),
+      coordEmail: form.coordEmail.value.trim(),
+      coordPhone: form.coordPhone.value.trim(),
+      needs: form.needs.value.trim()
+    };
+  }
 
   function buildSummary(){
     return [
@@ -188,20 +199,54 @@
     ].join('\n');
   }
 
+  function showBox(html){
+    afterBox.innerHTML = html;
+    afterBox.classList.add('show');
+    afterBox.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+
+  function attachCopy(){
+    document.getElementById('copyBtn').addEventListener('click', copyHandler);
+  }
+
+  function mailtoFallback(){
+    lastSummary = buildSummary();
+    var subject = 'סקר צרכים טכנולוגיים — ' + form.school.value.trim();
+    showBox('<b>תודה רבה!</b> נפתחה עבורכם הודעת מייל עם התשובות — יש ללחוץ בה על "שלח".<br>' +
+      'אם המייל לא נפתח, העתיקו את התשובות ושלחו לכתובת: <b dir="ltr">' + TO_EMAIL + '</b>' +
+      '<button type="button" class="copybtn" id="copyBtn">📋 העתקת התשובות</button>');
+    attachCopy();
+    window.location.href = 'mailto:' + TO_EMAIL +
+      '?subject=' + encodeURIComponent(subject) +
+      '&body=' + encodeURIComponent(lastSummary);
+  }
+
   form.addEventListener('submit', function(e){
     e.preventDefault();
     if(!form.checkValidity()){ form.reportValidity(); return; }
-    lastSummary = buildSummary();
-    var subject = 'סקר צרכים טכנולוגיים — ' + form.school.value.trim();
-    var mailto = 'mailto:' + TO_EMAIL +
-      '?subject=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(lastSummary);
-    afterBox.classList.add('show');
-    afterBox.scrollIntoView({behavior:'smooth', block:'nearest'});
-    window.location.href = mailto;
+
+    if(!SCRIPT_URL){ mailtoFallback(); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ שולח...';
+
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify(payload())
+    }).then(function(){
+      form.reset();
+      submitBtn.textContent = '✅ נשלח';
+      showBox('<b>תודה רבה!</b> התשובות נקלטו בהצלחה.<br>נשמח לעמוד בקשר — צוות מינהל הכשרה מקצועית.');
+    }).catch(function(){
+      submitBtn.disabled = false;
+      submitBtn.textContent = '📩 שליחת הסקר';
+      mailtoFallback();
+    });
   });
 
-  document.getElementById('copyBtn').addEventListener('click', function(){
+  function copyHandler(){
     if(!lastSummary) lastSummary = buildSummary();
     var btn = this;
     function done(){ btn.textContent = '✅ הועתק!'; setTimeout(function(){ btn.textContent = '📋 העתקת התשובות'; }, 2500); }
@@ -213,7 +258,7 @@
       ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
       done();
     }
-  });
+  }
 })();
 </script>
 </body>
